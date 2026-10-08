@@ -80,4 +80,10 @@ SELECT throws_ok(
 
 SELECT * FROM finish();
 
+-- This file commits, so it has to leave the database as it found it. Dropping
+-- the table leaves its registry row pointing at an OID that resolves to
+-- nothing, which is exactly what prune_registry() is for.
 DROP TABLE ix CASCADE;
+\o /dev/null
+SELECT ppm.prune_registry();
+\o
