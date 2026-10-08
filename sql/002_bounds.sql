@@ -1,8 +1,8 @@
 -- 002_bounds.sql
 --
 -- Where a partition starts and stops, and what it is called. Everything else
--- in this repository is built on these three functions, so they are the ones
--- with the most tests.
+-- in this repository is built on these functions, so they are the ones with
+-- the most tests.
 
 DO $$
 BEGIN
@@ -17,6 +17,14 @@ END $$;
 COMMENT ON TYPE ppm.bounds IS
     'Half-open range [lower_bound, upper_bound), which is what FOR VALUES '
     'FROM ... TO ... means. Both NULL for a default partition.';
+
+-- Both functions below gained a bound_tz argument after release. CREATE OR
+-- REPLACE cannot change a signature: a new argument with a default produces a
+-- second overload, and then a two-argument call matches both and the server
+-- refuses it as ambiguous. An upgrade has to drop the old one by its exact
+-- argument list, so these two lines stay here permanently.
+DROP FUNCTION IF EXISTS ppm.bounds_for(text, timestamptz, integer);
+DROP FUNCTION IF EXISTS ppm.partition_name(regclass, text, timestamptz);
 
 CREATE OR REPLACE FUNCTION ppm.granularity_step(granularity text)
 RETURNS interval
@@ -39,19 +47,29 @@ COMMENT ON FUNCTION ppm.granularity_step(text) IS
 -- months does not divide a year, and 36 hours does not divide anything. Each
 -- of these three has a date_trunc unit that produces the same boundaries no
 -- matter which instant inside the period is used as the anchor.
+--
+-- The truncation happens on a timestamp without time zone, taken from the
+-- anchor in bound_tz, and the result is converted back. date_trunc() on a
+-- timestamptz truncates in the session's TimeZone instead, which means two
+-- clients in different zones compute different boundaries for the same
+-- instant, and a backfill from a laptop writes partitions that do not line up
+-- with the ones the scheduled run wrote. bound_tz is stored per partition set
+-- so the answer is a property of the table and not of the connection.
 CREATE OR REPLACE FUNCTION ppm.bounds_for(
     granularity    text,
     anchor         timestamptz,
-    periods_ahead  integer DEFAULT 0
+    periods_ahead  integer DEFAULT 0,
+    bound_tz       text    DEFAULT 'UTC'
 )
 RETURNS ppm.bounds
 LANGUAGE plpgsql
-STABLE
+IMMUTABLE
 SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
-    step    interval := ppm.granularity_step(granularity);
-    result  ppm.bounds;
+    step        interval := ppm.granularity_step(granularity);
+    start_local timestamp;
+    result      ppm.bounds;
 BEGIN
     IF step IS NULL THEN
         RAISE EXCEPTION 'unsupported granularity %', granularity
@@ -59,18 +77,27 @@ BEGIN
                   HINT = 'granularity is one of day, week, month';
     END IF;
 
-    result.lower_bound := date_trunc(granularity, anchor) + (step * periods_ahead);
-    result.upper_bound := result.lower_bound + step;
+    -- An unknown zone raises 22023 from AT TIME ZONE itself, with a better
+    -- message than anything this function could write.
+    start_local := date_trunc(granularity, anchor AT TIME ZONE bound_tz)
+                   + (step * periods_ahead);
+
+    result.lower_bound := start_local AT TIME ZONE bound_tz;
+    result.upper_bound := (start_local + step) AT TIME ZONE bound_tz;
     RETURN result;
 END $$;
 
-COMMENT ON FUNCTION ppm.bounds_for(text, timestamptz, integer) IS
-    'Bounds of the period containing anchor, or periods_ahead periods later.';
+COMMENT ON FUNCTION ppm.bounds_for(text, timestamptz, integer, text) IS
+    'Bounds of the period containing anchor, or periods_ahead periods later, '
+    'cut at local midnight in bound_tz. In a zone that observes daylight '
+    'saving a daily partition is 23 or 25 hours wide, which is what a day in '
+    'that zone means.';
 
 CREATE OR REPLACE FUNCTION ppm.partition_name(
     parent       regclass,
     granularity  text,
-    lower_bound  timestamptz
+    lower_bound  timestamptz,
+    bound_tz     text DEFAULT 'UTC'
 )
 RETURNS name
 LANGUAGE plpgsql
@@ -81,13 +108,19 @@ DECLARE
     base    text;
     suffix  text;
     cand    text;
+    local   timestamp := lower_bound AT TIME ZONE bound_tz;
 BEGIN
     SELECT relname INTO base FROM pg_class WHERE oid = parent;
 
+    IF base IS NULL THEN
+        RAISE EXCEPTION 'relation % does not exist', parent
+            USING ERRCODE = 'undefined_table';
+    END IF;
+
     suffix := CASE granularity
-                  WHEN 'day'   THEN to_char(lower_bound, 'YYYYMMDD')
-                  WHEN 'week'  THEN to_char(lower_bound, '"w"YYYYMMDD')
-                  WHEN 'month' THEN to_char(lower_bound, 'YYYYMM')
+                  WHEN 'day'   THEN to_char(local, 'YYYYMMDD')
+                  WHEN 'week'  THEN to_char(local, '"w"YYYYMMDD')
+                  WHEN 'month' THEN to_char(local, 'YYYYMM')
               END;
 
     IF suffix IS NULL THEN
@@ -111,6 +144,7 @@ BEGIN
     RETURN cand;
 END $$;
 
-COMMENT ON FUNCTION ppm.partition_name(regclass, text, timestamptz) IS
+COMMENT ON FUNCTION ppm.partition_name(regclass, text, timestamptz, text) IS
     'Partition name for a lower bound: parent_20260108, parent_w20260105, '
-    'parent_202601. Weekly names carry the Monday the week starts on.';
+    'parent_202601. Weekly names carry the Monday the week starts on. The '
+    'date in the name is read in bound_tz, so it matches the boundary.';

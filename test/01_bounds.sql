@@ -5,7 +5,7 @@
 -- the happy ones.
 
 BEGIN;
-SELECT plan(21);
+SELECT plan(23);
 
 -- granularity_step
 
@@ -94,9 +94,19 @@ SELECT is(ppm.partition_name('events'::regclass, 'month', '2026-03-01 00:00+00')
 -- 63 bytes is the identifier limit. Past it the server truncates silently,
 -- two partitions of the same table end up with the same name, and the second
 -- CREATE fails with a duplicate_table that explains nothing.
+--
+-- The table is created in a statement of its own. partition_name() is STABLE,
+-- so it runs on the snapshot the calling query started with: called in the
+-- same query as the volatile function that creates the table, it reads a
+-- pg_class that does not have the new row in it yet and reports the parent as
+-- missing.
+SELECT lives_ok(
+    $$SELECT fixture.new_parent(repeat('e', 56))$$,
+    'a parent with a 56 byte name is created');
+
 SELECT throws_ok(
     $$SELECT ppm.partition_name(
-          fixture.new_parent(repeat('e', 56)), 'day', '2026-03-17 00:00+00')$$,
+          (repeat('e', 56))::regclass, 'day', '2026-03-17 00:00+00')$$,
     '42622',
     NULL,
     'partition_name refuses to build a name the server would truncate');
