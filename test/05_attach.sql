@@ -13,8 +13,9 @@ DROP TABLE IF EXISTS att_naive CASCADE;
 DROP TABLE IF EXISTS att_prepared CASCADE;
 DROP TABLE IF EXISTS att_notvalid CASCADE;
 DROP TABLE IF EXISTS att_wrongrange CASCADE;
+DROP TABLE IF EXISTS att_split CASCADE;
 
-SELECT plan(14);
+SELECT plan(17);
 
 \o /dev/null
 SELECT fixture.new_parent('att', with_default := true);
@@ -22,6 +23,7 @@ SELECT fixture.new_orphan('att_naive', rows := 2000, at := '2026-04-10 12:00+00'
 SELECT fixture.new_orphan('att_prepared', rows := 2000, at := '2026-05-10 12:00+00');
 SELECT fixture.new_orphan('att_notvalid', rows := 10, at := '2026-06-10 12:00+00');
 SELECT fixture.new_orphan('att_wrongrange', rows := 10, at := '2026-07-10 12:00+00');
+SELECT fixture.new_orphan('att_split', rows := 2000, at := '2026-09-10 12:00+00');
 \o
 
 -- An unprepared table is refused rather than attached expensively.
@@ -73,6 +75,47 @@ SELECT ok((SELECT convalidated FROM pg_constraint
             WHERE conrelid = 'att_prepared'::regclass
               AND conname = 'att_prepared_ppm_bounds'),
           'the constraint it leaves behind is validated');
+
+-- The two halves of prepare_for_attach(), measured one at a time, so that
+-- the claim about which statement reads the table is about one statement. The
+-- statements are taken from the function's own dry run and run with \gexec,
+-- so this cannot drift from what the function would really do.
+\o /dev/null
+SELECT pg_stat_force_next_flush();
+\o
+SELECT fixture.seq_scans('att_split') AS split_before \gset
+
+SELECT line FROM (
+    SELECT row_number() OVER () AS n, p AS line
+      FROM ppm.prepare_for_attach('att_split', 'at',
+               '2026-09-01 00:00+00', '2026-10-01 00:00+00', dry_run := true) p
+) t WHERE n = 1 \gexec
+
+\o /dev/null
+SELECT pg_stat_force_next_flush();
+\o
+SELECT is(fixture.seq_scans('att_split') - :split_before, 0::bigint,
+          'ADD CONSTRAINT ... NOT VALID does not read the table');
+
+-- Asked again, with the constraint there but not validated, it returns the one
+-- statement that is still missing. That is also the recovery path for a
+-- VALIDATE that was interrupted.
+SELECT is((SELECT count(*)::integer FROM ppm.prepare_for_attach(
+              'att_split', 'at', '2026-09-01 00:00+00', '2026-10-01 00:00+00',
+              dry_run := true)), 1,
+          'a constraint left NOT VALID leaves one statement to run');
+
+SELECT line FROM (
+    SELECT row_number() OVER () AS n, p AS line
+      FROM ppm.prepare_for_attach('att_split', 'at',
+               '2026-09-01 00:00+00', '2026-10-01 00:00+00', dry_run := true) p
+) t WHERE n = 1 \gexec
+
+\o /dev/null
+SELECT pg_stat_force_next_flush();
+\o
+SELECT is(fixture.seq_scans('att_split') - :split_before, 1::bigint,
+          'and VALIDATE CONSTRAINT is the statement that reads it');
 
 -- Calling it again is a notice and no statements.
 SELECT is((SELECT count(*)::integer FROM ppm.prepare_for_attach(
@@ -133,3 +176,4 @@ SELECT * FROM finish();
 DROP TABLE att CASCADE;
 DROP TABLE att_notvalid;
 DROP TABLE att_wrongrange;
+DROP TABLE att_split;

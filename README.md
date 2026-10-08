@@ -41,9 +41,9 @@ That session ran with the client in UTC. The bounds are instants and do not
 move with the client; only their rendering does, which is the subject of
 [Boundaries are cut in a stored zone](#boundaries-are-cut-in-a-stored-zone).
 
-22 functions, 2 tables, 2 views, 1704 lines of SQL. 177 pgTAP tests over 10
-files, all of which run against a `postgres:16` container in CI and against any
-reachable server locally.
+22 functions, 2 tables, 2 views, 1704 lines of SQL. 180 pgTAP tests over 10
+files. CI runs them against a `postgres:16` service container; locally they run
+against any server psql can reach.
 
 ## What each function does, and what it costs
 
@@ -80,14 +80,20 @@ readers of every other partition too. A validated CHECK constraint that implies
 the bounds turns the proof into a catalogue lookup.
 
 `test/05_attach.sql` measures this with `pg_stat_all_tables.seq_scan` across
-2,000 row tables, one statement at a time:
+2,000 row tables:
 
 | Statement | Scans of the child | Scans of the default partition |
 |---|---|---|
 | `ATTACH PARTITION` with no CHECK | 1 | 1 |
-| `ADD CONSTRAINT ... NOT VALID` | 0 | 0 |
-| `VALIDATE CONSTRAINT` | 1 | 0 |
+| `ADD CONSTRAINT ... NOT VALID` | 0 | not involved |
+| `VALIDATE CONSTRAINT` | 1 | not involved |
 | `ATTACH PARTITION` after that | 0 | 1 |
+
+The two middle statements name the child only, which is not a partition of
+anything yet, so the parent and its default partition are not in their way.
+They are measured one statement at a time, and the statements are taken from
+`prepare_for_attach()`'s own dry run and run with `\gexec`, so the measurement
+cannot drift from what the function does.
 
 **The scan does not go away. It moves.** Both routes read the table once. The
 difference is the lock it is read under: ACCESS EXCLUSIVE on the parent in the
@@ -248,7 +254,7 @@ make test           # build a database, run the suite, drop it
 make lint           # conventions, no database needed
 ```
 
-177 tests in 10 files. `test/run_tests.sh` builds `pg_partition_manager_test`,
+180 tests in 10 files. `test/run_tests.sh` builds `pg_partition_manager_test`,
 loads pgTAP and `sql/install.sql` into it, runs each file in its own psql
 session, and drops the database again. It refuses to touch a database that
 already exists unless `TEST_DB_REUSE=1`, and it says what it tried to connect
@@ -272,9 +278,9 @@ libpq said:
 | `00_install.sql` | 9 | the objects exist, the version agrees with `VERSION`, `install.sql` loads twice |
 | `01_bounds.sql` | 23 | boundaries, names, the session zone, the 63 byte identifier limit |
 | `02_inspect.sql` | 19 | reading bounds out of the catalogue, and the shapes that are refused |
-| `03_register.sql` | 21 | validation. 13 of the 21 are refusals |
+| `03_register.sql` | 21 | validation. 11 of the 21 are refusals |
 | `04_create_ahead.sql` | 19 | tiling with no gaps, idempotence, overlaps, the default partition |
-| `05_attach.sql` | 14 | the four scan measurements above |
+| `05_attach.sql` | 17 | the scan measurements above, one statement at a time |
 | `06_retention.sql` | 25 | cutoffs, archiving, the empty-set guard, the 25001 |
 | `07_drain_default.sql` | 21 | rows moving, and `create_ahead()` failing before and working after |
 | `08_index_script.sql` | 14 | the script, run with `\gexec`, and the index coming out valid |
