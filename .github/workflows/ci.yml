@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Conventions
+        run: make lint
+
+  test:
+    runs-on: ubuntu-24.04
+
+    services:
+      # The server under test. Mapped to 5433 rather than 5432 so that it
+      # cannot be confused with the PostgreSQL the runner image already has
+      # installed, and so a stray local connection fails instead of passing
+      # against the wrong server. test/00_install.sql asserts the major
+      # version it is actually talking to.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5433
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ensure a psql client
+        run: |
+          if ! command -v psql > /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      # Fetches the pinned tarball, checks its sha256, and writes one loadable
+      # SQL file. pgTAP is pure SQL, so it goes into the database with psql.
+      # CREATE EXTENSION would need the control file on the server's own
+      # filesystem, and the server here is a container nothing on this runner
+      # can write to.
+      - name: Fetch pgTAP
+        run: make pgtap
+
+      - name: pgTAP suite
+        run: make test

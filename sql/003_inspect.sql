@@ -57,6 +57,10 @@ BEGIN
     END;
 END $$;
 
+COMMENT ON FUNCTION ppm.bound_value(text) IS
+    'Read one rendered bound token: a quoted literal, or MINVALUE or MAXVALUE, '
+    'which the catalogue writes for an unbounded side.';
+
 -- Bounds of one partition. NULL on both sides for a default partition, which
 -- is a real answer rather than an error: the default holds whatever is left.
 CREATE OR REPLACE FUNCTION ppm.partition_bounds(child regclass)

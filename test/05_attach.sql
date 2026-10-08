@@ -1,7 +1,7 @@
 -- 05_attach.sql
 --
--- This file does not run in a transaction, and that is deliberate. Table
--- statistics are accumulated per backend and flushed when a transaction ends,
+-- This file runs in autocommit, and that is deliberate. Table statistics are
+-- accumulated per backend and flushed when a transaction ends,
 -- so a seq_scan count read inside the same transaction as the work is the
 -- count from before the work. The claim being tested is about which
 -- statements read a table, so the statements have to commit.

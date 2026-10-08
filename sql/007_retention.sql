@@ -115,7 +115,8 @@ BEGIN
     END IF;
 
     IF NOT dry_run THEN
-        RAISE NOTICE 'detaching % partition(s) from %: each DETACH takes ACCESS EXCLUSIVE on the parent',
+        RAISE NOTICE 'detaching % partition(s) from %: each DETACH takes '
+                     'ACCESS EXCLUSIVE on the parent',
                      victim_count, parent_name;
     END IF;
 
@@ -231,7 +232,8 @@ BEGIN
         child_name := ppm.qualified_name(victim.child);
         RETURN NEXT format('ALTER TABLE %s DETACH PARTITION %s CONCURRENTLY;',
                            parent_name, child_name);
-        RETURN NEXT format('-- if that was interrupted: ALTER TABLE %s DETACH PARTITION %s FINALIZE;',
+        RETURN NEXT format('-- if that was interrupted: ALTER TABLE %s '
+                           'DETACH PARTITION %s FINALIZE;',
                            parent_name, child_name);
 
         IF cfg.retention_action = 'drop' THEN

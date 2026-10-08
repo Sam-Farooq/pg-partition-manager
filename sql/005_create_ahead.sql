@@ -49,7 +49,8 @@ BEGIN
     IF dflt IS NOT NULL THEN
         SELECT approx_rows INTO dflt_rows FROM ppm.partitions(parent)
          WHERE child = dflt;
-        RAISE NOTICE 'set % has a default partition (%): each CREATE below scans it under ACCESS EXCLUSIVE, estimated % rows',
+        RAISE NOTICE 'set % has a default partition (%): every CREATE below '
+                     'scans it under ACCESS EXCLUSIVE, estimated % rows',
                      parent_name, ppm.qualified_name(dflt),
                      coalesce(dflt_rows::text, 'unknown, never analysed');
     END IF;
@@ -118,7 +119,8 @@ BEGIN
                 -- partition holds rows that belong in the new range. The
                 -- server's message does not say what to do about it.
                 WHEN check_violation THEN
-                    RAISE EXCEPTION 'cannot create %.%: the default partition % holds rows in [%, %)',
+                    RAISE EXCEPTION
+                        'cannot create %.%: the default partition % holds rows in [%, %)',
                                     nsp, child_name, ppm.qualified_name(dflt),
                                     b.lower_bound, b.upper_bound
                         USING ERRCODE = 'object_not_in_prerequisite_state',

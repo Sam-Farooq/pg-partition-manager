@@ -1,7 +1,8 @@
 -- 08_index_script.sql
 --
--- Like 05_attach.sql this file runs without a transaction, because the script
--- it checks contains CREATE INDEX CONCURRENTLY, which cannot run inside one.
+-- Like 05_attach.sql this file runs in autocommit, because the script it
+-- checks contains CREATE INDEX CONCURRENTLY, which cannot run in a
+-- transaction block.
 -- It executes the script with \gexec, which is how the script is meant to be
 -- used, and drops what it made at the end.
 

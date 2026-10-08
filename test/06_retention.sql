@@ -130,10 +130,12 @@ SELECT throws_ok(
 
 -- cc holds 17 and 18 March, and on 25 March a two day window leaves both
 -- outside it.
-SELECT is((SELECT count(*)::integer FROM ppm.retention_script('cc', '2026-03-25 00:00+00') AS s(line)
+SELECT is((SELECT count(*)::integer
+             FROM ppm.retention_script('cc', '2026-03-25 00:00+00') AS s(line)
             WHERE line LIKE 'ALTER TABLE % DETACH PARTITION % CONCURRENTLY;'), 2,
           'retention_script writes the concurrent form, one per partition');
-SELECT is((SELECT count(*)::integer FROM ppm.retention_script('cc', '2026-03-25 00:00+00') AS s(line)
+SELECT is((SELECT count(*)::integer
+             FROM ppm.retention_script('cc', '2026-03-25 00:00+00') AS s(line)
             WHERE line LIKE '-- if that was interrupted: ALTER TABLE%FINALIZE;'), 2,
           'and pairs each one with the FINALIZE it may need');
 SELECT is((SELECT count(*)::integer

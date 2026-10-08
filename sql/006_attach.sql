@@ -214,7 +214,8 @@ BEGIN
         RAISE EXCEPTION '% on % is NOT VALID, so ATTACH would scan the table anyway',
                         cname, child_name
             USING ERRCODE = 'object_not_in_prerequisite_state',
-                  HINT = 'ALTER TABLE ... VALIDATE CONSTRAINT, or call ppm.prepare_for_attach() again';
+                  HINT = 'ALTER TABLE ... VALIDATE CONSTRAINT, or call '
+                         'ppm.prepare_for_attach() again';
     END IF;
 
     IF position(quote_literal(lower_bound) IN existing) = 0
@@ -250,7 +251,8 @@ BEGIN
             EXECUTE stmt;
         EXCEPTION
             WHEN check_violation THEN
-                RAISE EXCEPTION 'cannot attach % to %: the default partition % holds rows in [%, %)',
+                RAISE EXCEPTION
+                    'cannot attach % to %: the default partition % holds rows in [%, %)',
                                 child_name, parent_name, ppm.qualified_name(dflt),
                                 lower_bound, upper_bound
                     USING ERRCODE = 'object_not_in_prerequisite_state',

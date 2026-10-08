@@ -98,14 +98,16 @@ BEGIN
             RAISE EXCEPTION '% already exists, so the rows in % cannot be moved into it',
                             ppm.qualified_name(clash), dflt_name
                 USING ERRCODE = 'duplicate_table',
-                      HINT = 'that table should not exist: the default cannot hold rows for a range that is already a partition';
+                      HINT = 'the default cannot hold rows for a range that is '
+                             'already a partition, so that table is something else';
         END IF;
 
         -- INCLUDING INDEXES is left out. An index on the parent is created on
         -- the child by the ATTACH itself, and doing it here would build the
         -- same index twice. Building it before the attach, with CREATE INDEX
         -- CONCURRENTLY, is what ppm.index_script() is for.
-        stmt := format('CREATE TABLE %s (LIKE %s INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS)',
+        stmt := format('CREATE TABLE %s (LIKE %s INCLUDING DEFAULTS '
+                       'INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS)',
                        target, parent_name);
         IF NOT dry_run THEN
             EXECUTE stmt;
