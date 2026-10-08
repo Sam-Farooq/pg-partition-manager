@@ -19,7 +19,7 @@ LANGUAGE sql
 IMMUTABLE
 SET search_path = pg_catalog, pg_temp
 AS $$
-    SELECT '0.13.2'::text;
+    SELECT '0.14.1'::text;
 $$;
 
 COMMENT ON FUNCTION ppm.version() IS 'Version of pg-partition-manager installed in this database.';

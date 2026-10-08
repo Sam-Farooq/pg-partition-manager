@@ -8,7 +8,7 @@ moves rows out of a default partition into the partition they belong in.
 
 There is no background worker, no scheduler and no extension to install. psql
 loads nine files, and something outside the database calls the functions: cron,
-pg_cron, an application, a person at a prompt. Version 0.13.2.
+pg_cron, an application, a person at a prompt. Version 0.14.1.
 
 ```bash
 psql -v ON_ERROR_STOP=1 -f sql/install.sql
