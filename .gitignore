@@ -1,0 +1,11 @@
+# pgTAP is fetched at a pinned version, never vendored
+.pgtap/
+
+# psql and test runner output
+test/out/
+*.log
+
+# editor and OS droppings
+.DS_Store
+*.swp
+*~
