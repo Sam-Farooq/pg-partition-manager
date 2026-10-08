@@ -22,5 +22,6 @@ SET LOCAL client_min_messages = warning;
 \ir 004_register.sql
 \ir 005_create_ahead.sql
 \ir 006_attach.sql
+\ir 007_retention.sql
 
 COMMIT;
