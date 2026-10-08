@@ -14,8 +14,10 @@ DROP TABLE IF EXISTS att_prepared CASCADE;
 DROP TABLE IF EXISTS att_notvalid CASCADE;
 DROP TABLE IF EXISTS att_wrongrange CASCADE;
 DROP TABLE IF EXISTS att_split CASCADE;
+DROP TABLE IF EXISTS att2 CASCADE;
+DROP TABLE IF EXISTS att2_c CASCADE;
 
-SELECT plan(17);
+SELECT plan(19);
 
 \o /dev/null
 SELECT fixture.new_parent('att', with_default := true);
@@ -141,6 +143,33 @@ SELECT is((ppm.partition_bounds('att_prepared')).upper_bound,
           '2026-06-01 00:00+00'::timestamptz,
           'and the partition is attached with the bounds asked for');
 
+-- The default partition's scan is the one thing preparation cannot remove,
+-- and there is exactly one way out of it: a CHECK on the default that already
+-- proves it holds nothing in the new range.
+\o /dev/null
+SELECT fixture.new_parent('att2', with_default := true);
+SELECT fixture.new_orphan('att2_c', rows := 100, at := '2026-04-10 12:00+00');
+\o
+ALTER TABLE att2_default ADD CONSTRAINT att2_default_from_november
+    CHECK (at >= '2026-11-01 00:00+00');
+\o /dev/null
+SELECT ppm.prepare_for_attach('att2_c', 'at',
+    '2026-04-01 00:00+00', '2026-05-01 00:00+00');
+SELECT pg_stat_force_next_flush();
+\o
+SELECT fixture.seq_scans('att2_default') AS excluded_before \gset
+
+\o /dev/null
+SELECT ppm.attach_prepared('att2', 'att2_c',
+    '2026-04-01 00:00+00', '2026-05-01 00:00+00');
+SELECT pg_stat_force_next_flush();
+\o
+SELECT is(fixture.seq_scans('att2_default') - :excluded_before, 0::bigint,
+          'a CHECK on the default that excludes the range skips its scan too');
+SELECT is((ppm.partition_bounds('att2_c')).lower_bound,
+          '2026-04-01 00:00+00'::timestamptz,
+          'and the partition is attached with nothing read at all');
+
 -- A constraint that is NOT VALID is worse than none: it looks prepared and
 -- the attach still scans.
 ALTER TABLE att_notvalid ADD CONSTRAINT att_notvalid_ppm_bounds
@@ -177,3 +206,4 @@ DROP TABLE att CASCADE;
 DROP TABLE att_notvalid;
 DROP TABLE att_wrongrange;
 DROP TABLE att_split;
+DROP TABLE att2 CASCADE;

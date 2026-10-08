@@ -41,7 +41,7 @@ That session ran with the client in UTC. The bounds are instants and do not
 move with the client; only their rendering does, which is the subject of
 [Boundaries are cut in a stored zone](#boundaries-are-cut-in-a-stored-zone).
 
-22 functions, 2 tables, 2 views, 1704 lines of SQL. 180 pgTAP tests over 10
+22 functions, 2 tables, 2 views, 1704 lines of SQL. 182 pgTAP tests over 10
 files. CI runs them against a `postgres:16` service container; locally they run
 against any server psql can reach.
 
@@ -104,8 +104,9 @@ one, plus a CHECK constraint left behind on the partition for ever.
 
 The default partition's scan is in both routes and cannot be prepared away: the
 server has to prove the default holds no row belonging in the new range. The
-one way out is a CHECK constraint on the default that excludes the range, which
-is measured in the same file.
+one way out is a CHECK constraint on the default that already proves it holds
+nothing in that range, and the last two tests in the same file attach a
+partition with the default's counter not moving at all.
 
 That measurement is also the reason that file commits instead of rolling back.
 Table statistics are accumulated per backend and flushed when a transaction
@@ -204,12 +205,13 @@ daylight saving, one daily partition a year is 23 hours wide and another is 25.
 That is correct and it is worth knowing before anyone writes
 `upper_bound - lower_bound`.
 
-Two smaller consequences, both tested:
+Two smaller consequences:
 
 - `ppm.partition_bounds()` reads bounds back by parsing
   `pg_get_expr(relpartbound)`, which renders its literals in the session zone.
   The round trip through a cast recovers the instant, so the answer does not
-  change when the client does.
+  change when the client does. `02_inspect.sql` asserts that by moving the
+  session to `America/Denver` between two reads of the same partition.
 - Adding `bound_tz` to two functions meant dropping them rather than replacing
   them. A new argument with a default produces a second overload, and then a
   short call matches both and the server refuses it as ambiguous. The two
@@ -254,7 +256,7 @@ make test           # build a database, run the suite, drop it
 make lint           # conventions, no database needed
 ```
 
-180 tests in 10 files. `test/run_tests.sh` builds `pg_partition_manager_test`,
+182 tests in 10 files. `test/run_tests.sh` builds `pg_partition_manager_test`,
 loads pgTAP and `sql/install.sql` into it, runs each file in its own psql
 session, and drops the database again. It refuses to touch a database that
 already exists unless `TEST_DB_REUSE=1`, and it says what it tried to connect
@@ -280,7 +282,7 @@ libpq said:
 | `02_inspect.sql` | 19 | reading bounds out of the catalogue, and the shapes that are refused |
 | `03_register.sql` | 21 | validation. 11 of the 21 are refusals |
 | `04_create_ahead.sql` | 19 | tiling with no gaps, idempotence, overlaps, the default partition |
-| `05_attach.sql` | 17 | the scan measurements above, one statement at a time |
+| `05_attach.sql` | 19 | the scan measurements above, one statement at a time |
 | `06_retention.sql` | 25 | cutoffs, archiving, the empty-set guard, the 25001 |
 | `07_drain_default.sql` | 21 | rows moving, and `create_ahead()` failing before and working after |
 | `08_index_script.sql` | 14 | the script, run with `\gexec`, and the index coming out valid |
@@ -299,7 +301,7 @@ Three facts about the suite worth knowing before trusting it:
   `serialization_failure` handler in `drain_default()` fire when another
   connection holds a lock or writes to the default partition while a call is
   running. The runner is one psql session at a time, so neither has been
-  exercised. They are four lines each and they are not covered.
+  exercised. Five lines each, and not covered.
 
 `test/lint.sh` is the other half, and it has teeth rather than opinions. It
 fails the build if a function does not pin `search_path`, if a function has no
