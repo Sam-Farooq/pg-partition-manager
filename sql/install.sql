@@ -19,5 +19,6 @@ SET LOCAL client_min_messages = warning;
 \ir 001_schema.sql
 \ir 002_bounds.sql
 \ir 003_inspect.sql
+\ir 004_register.sql
 
 COMMIT;
